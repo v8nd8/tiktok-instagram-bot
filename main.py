@@ -1,84 +1,45 @@
-import telebot
-import requests
-from bs4 import BeautifulSoup
-from flask import Flask
-from threading import Thread
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
 
-TOKEN = "7240087170:AAEYeJrZyYPleAX0pwTRPwmW3dwKbe5GIog"  # твой токен бота
-CHANNEL = "@mirznan1"  # твой канал
+# Настройки
+TOKEN = '7240087170:AAEYeJrZyYPleAX0pwTRPwmW3dwKbe5GIog'  # Твой токен
+CHANNEL = '@mirznan1'  # Твой канал (начинается с @)
 
-bot = telebot.TeleBot(TOKEN)
-app = Flask(__name__)
+# Логирование
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-@app.route('/')
-def home():
-    return "Bot is alive!"
-
-def run():
-    app.run(host="0.0.0.0", port=3000)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-def check_subscription(user_id):
+# Проверка подписки
+def check_subscription(user_id: int, context: CallbackContext) -> bool:
     try:
-        member = bot.get_chat_member(CHANNEL, user_id)
-        return member.status in ['member', 'creator', 'administrator']
-    except:
+        member = context.bot.get_chat_member(CHANNEL[1:], user_id)  # Убираем @
+        return member.status in ['member', 'administrator', 'creator']
+    except Exception as e:
+        logger.error(f"Ошибка проверки подписки: {e}")
         return False
 
-def get_tiktok_video(url):
-    session = requests.Session()
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    data = {'url': url, 'format': '', 'token': ''}
-    res = session.post('https://ttdownloader.com/req/', headers=headers, data=data)
-    if res.status_code == 200:
-        soup = BeautifulSoup(res.text, 'html.parser')
-        video_url = soup.find('a', attrs={'rel':'nofollow'})
-        if video_url:
-            return video_url['href']
-    return None
+# Команда /start
+def start(update: Update, context: CallbackContext):
+    user = update.effective_user
+    update.message.reply_text(
+        f"👋 Привет, {user.first_name}!\n"
+        f"📤 Присылай ссылку из TikTok или Instagram, и я скачаю видео.\n"
+        f"📢 Подпишись на канал: {CHANNEL}"
+    )
 
-def get_instagram_video(url):
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    res = requests.get(url, headers=headers)
-    if res.status_code == 200:
-        soup = BeautifulSoup(res.text, 'html.parser')
-        meta = soup.find('meta', property='og:video')
-        if meta:
-            return meta['content']
-    return None
-
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(message.chat.id, f"Привет! Отправь ссылку на видео из TikTok или Instagram.\nНо сначала подпишись на канал {CHANNEL}.")
-
-@bot.message_handler(func=lambda message: True)
-def handle_message(message):
-    user_id = message.from_user.id
-    if not check_subscription(user_id):
-        bot.send_message(message.chat.id, f"Ты должен подписаться на канал {CHANNEL}, чтобы пользоваться ботом.")
+# Обработчик сообщений
+def handle_message(update: Update, context: CallbackContext):
+    user_id = update.effective_user.id
+    
+    if not check_subscription(user_id, context):
+        update.message.reply_text(
+            "⚠️ Подпишись на канал, чтобы использовать бота:",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("📢 Подписаться", url=f"https://t.me/{CHANNEL[1:]}")],
+                [InlineKeyboardButton("✅ Я подписался", callback_data="check_sub")]
+            ])
+        )
         return
 
-    url = message.text.strip()
-    if "tiktok.com" in url:
-        bot.send_message(message.chat.id, "Ищу видео в TikTok...")
-        video_url = get_tiktok_video(url)
-        if video_url:
-            bot.send_video(message.chat.id, video_url)
-        else:
-            bot.send_message(message.chat.id, "Не удалось получить видео из TikTok.")
-    elif "instagram.com" in url:
-        bot.send_message(message.chat.id, "Ищу видео в Instagram...")
-        video_url = get_instagram_video(url)
-        if video_url:
-            bot.send_video(message.chat.id, video_url)
-        else:
-            bot.send_message(message.chat.id, "Не удалось получить видео из Instagram.")
-    else:
-        bot.send_message(message.chat.id, "Пожалуйста, пришли ссылку на видео из TikTok или Instagram.")
-
-if __name__ == "__main__":
-    keep_alive()
-    bot.polling(none_stop=True)
+    url
